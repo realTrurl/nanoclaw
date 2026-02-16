@@ -274,6 +274,57 @@ Use available_groups.json to find the JID for a group. The folder name should be
   },
 );
 
+server.tool(
+  'set_model',
+  `Switch the Claude model for this group. Takes effect after an automatic container restart.
+
+Shorthand aliases:
+• "opus" — Claude Opus 4.6 (most capable, slowest)
+• "sonnet" — Claude Sonnet 4.5 (balanced)
+• "haiku" — Claude Haiku 4.5 (fastest, least capable)
+
+You can also pass a full model ID (e.g., "claude-sonnet-4-5-20250929").`,
+  {
+    model: z.string().describe('Model shorthand (opus/sonnet/haiku) or full model ID (e.g., claude-opus-4-6)'),
+  },
+  async (args) => {
+    const data = {
+      type: 'set_model',
+      model: args.model,
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    return {
+      content: [{ type: 'text' as const, text: `Model switch to ${args.model} requested. The container will restart automatically — I'll be back in a moment running on ${args.model}.` }],
+    };
+  },
+);
+
+server.tool(
+  'restart_container',
+  'Restart the current container. Useful after configuration changes or to get a fresh environment. The session will be preserved.',
+  {
+    reason: z.string().optional().describe('Optional reason for the restart'),
+  },
+  async (args) => {
+    const data = {
+      type: 'restart_container',
+      reason: args.reason || 'user requested',
+      groupFolder,
+      timestamp: new Date().toISOString(),
+    };
+
+    writeIpcFile(TASKS_DIR, data);
+
+    return {
+      content: [{ type: 'text' as const, text: 'Container restart requested. I\'ll be back in a moment.' }],
+    };
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);

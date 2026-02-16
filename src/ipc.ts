@@ -26,6 +26,7 @@ export interface IpcDeps {
     availableGroups: AvailableGroup[],
     registeredJids: Set<string>,
   ) => void;
+  restartContainer: (groupFolder: string) => void;
 }
 
 /**
@@ -209,6 +210,10 @@ export async function processTaskIpc(
     trigger?: string;
     requiresTrigger?: boolean;
     containerConfig?: RegisteredGroup['containerConfig'];
+    // For set_model
+    model?: string;
+    // For restart_container
+    reason?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -412,6 +417,37 @@ export async function processTaskIpc(
           'Invalid register_group request - missing required fields',
         );
       }
+      break;
+
+    case 'set_model':
+      if (data.model) {
+        // Accept shorthands (opus, sonnet, haiku) or full model IDs (claude-opus-4-6, etc.)
+        if (!/^(opus|sonnet|haiku|claude-[a-z0-9-]+)$/.test(data.model)) {
+          logger.warn({ model: data.model, sourceGroup }, 'Invalid model requested');
+          break;
+        }
+        // Update the group's settings.json
+        const sessionsDir = path.join(DATA_DIR, 'sessions', sourceGroup, '.claude');
+        const settingsPath = path.join(sessionsDir, 'settings.json');
+        try {
+          const settings = fs.existsSync(settingsPath)
+            ? JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
+            : { env: {} };
+          settings.env = settings.env || {};
+          settings.env.ANTHROPIC_MODEL = data.model;
+          fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
+          logger.info({ model: data.model, sourceGroup }, 'Model updated via IPC');
+          // Auto-restart the container so the new model takes effect
+          deps.restartContainer(sourceGroup);
+        } catch (err) {
+          logger.error({ err, sourceGroup }, 'Failed to update model settings');
+        }
+      }
+      break;
+
+    case 'restart_container':
+      logger.info({ sourceGroup, reason: data.reason || 'requested' }, 'Container restart requested via IPC');
+      deps.restartContainer(sourceGroup);
       break;
 
     default:

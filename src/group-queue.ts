@@ -1,4 +1,4 @@
-import { ChildProcess } from 'child_process';
+import { ChildProcess, execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -155,6 +155,33 @@ export class GroupQueue {
     } catch {
       // ignore
     }
+  }
+
+  /**
+   * Kill the active container for a group. Used for restart requests.
+   * The container exit will trigger drainGroup() which picks up any pending messages.
+   */
+  killContainer(groupJid: string): boolean {
+    const state = this.getGroup(groupJid);
+    if (!state.active || !state.containerName) return false;
+
+    logger.info({ groupJid, containerName: state.containerName }, 'Killing container for restart');
+    try {
+      execSync(`docker stop ${state.containerName}`, { stdio: 'pipe', timeout: 10000 });
+    } catch {
+      // Container may already be stopped
+    }
+    return true;
+  }
+
+  /**
+   * Find the chat JID for a given group folder.
+   */
+  findJidByFolder(groupFolder: string): string | null {
+    for (const [jid, state] of this.groups) {
+      if (state.groupFolder === groupFolder) return jid;
+    }
+    return null;
   }
 
   private async runForGroup(

@@ -481,6 +481,30 @@ async function main(): Promise<void> {
     syncGroupMetadata: (force) => whatsapp?.syncGroupMetadata(force) ?? Promise.resolve(),
     getAvailableGroups,
     writeGroupsSnapshot: (gf, im, ag, rj) => writeGroupsSnapshot(gf, im, ag, rj),
+    restartContainer: (groupFolder) => {
+      // Find the chat JID for this group folder
+      const chatJid = queue.findJidByFolder(groupFolder)
+        || Object.entries(registeredGroups).find(([, g]) => g.folder === groupFolder)?.[0];
+      if (!chatJid) {
+        logger.warn({ groupFolder }, 'Cannot restart: no chat JID found for group');
+        return;
+      }
+      // Inject a boot message so the new container starts
+      storeMessage({
+        id: `restart-${Date.now()}`,
+        chat_jid: chatJid,
+        sender: 'system',
+        sender_name: 'System',
+        content: '[SYSTEM] Container restarted.',
+        timestamp: new Date().toISOString(),
+        is_from_me: false,
+      });
+      // Queue a message check (sets pendingMessages=true while container is active)
+      queue.enqueueMessageCheck(chatJid);
+      // Kill the running container — GroupQueue will start a new one via drainGroup
+      queue.killContainer(chatJid);
+      logger.info({ groupFolder, chatJid }, 'Container restart triggered');
+    },
   });
   queue.setProcessMessagesFn(processGroupMessages);
   recoverPendingMessages();
