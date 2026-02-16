@@ -10,7 +10,7 @@ import {
   TIMEZONE,
 } from './config.js';
 import { AvailableGroup } from './container-runner.js';
-import { createTask, deleteTask, getTaskById, updateTask } from './db.js';
+import { createTask, deleteTask, getAllTasks, getTaskById, updateTask } from './db.js';
 import { logger } from './logger.js';
 import { RegisteredGroup } from './types.js';
 
@@ -26,6 +26,46 @@ export interface IpcDeps {
     availableGroups: AvailableGroup[],
     registeredJids: Set<string>,
   ) => void;
+}
+
+/**
+ * Refresh the current_tasks.json snapshot for all active group IPC dirs.
+ * Called after any task mutation so the container always sees up-to-date tasks.
+ */
+function refreshTaskSnapshots(): void {
+  const ipcBaseDir = path.join(DATA_DIR, 'ipc');
+  const tasks = getAllTasks();
+
+  let groupFolders: string[];
+  try {
+    groupFolders = fs.readdirSync(ipcBaseDir).filter((f) => {
+      try {
+        return fs.statSync(path.join(ipcBaseDir, f)).isDirectory() && f !== 'errors';
+      } catch { return false; }
+    });
+  } catch { return; }
+
+  for (const folder of groupFolders) {
+    const isMain = folder === MAIN_GROUP_FOLDER;
+    const filtered = isMain
+      ? tasks
+      : tasks.filter((t) => t.group_folder === folder);
+
+    const snapshot = filtered.map((t) => ({
+      id: t.id,
+      groupFolder: t.group_folder,
+      prompt: t.prompt,
+      schedule_type: t.schedule_type,
+      schedule_value: t.schedule_value,
+      status: t.status,
+      next_run: t.next_run,
+    }));
+
+    const tasksFile = path.join(ipcBaseDir, folder, 'current_tasks.json');
+    try {
+      fs.writeFileSync(tasksFile, JSON.stringify(snapshot, null, 2));
+    } catch { /* best effort */ }
+  }
 }
 
 let ipcWatcherRunning = false;
@@ -262,6 +302,7 @@ export async function processTaskIpc(
           status: 'active',
           created_at: new Date().toISOString(),
         });
+        refreshTaskSnapshots();
         logger.info(
           { taskId, sourceGroup, targetFolder, contextMode },
           'Task created via IPC',
@@ -272,15 +313,15 @@ export async function processTaskIpc(
     case 'pause_task':
       if (data.taskId) {
         const task = getTaskById(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (!task) {
+          logger.warn({ taskId: data.taskId, sourceGroup }, 'Task not found for pause');
+        } else if (isMain || task.group_folder === sourceGroup) {
           updateTask(data.taskId, { status: 'paused' });
-          logger.info(
-            { taskId: data.taskId, sourceGroup },
-            'Task paused via IPC',
-          );
+          refreshTaskSnapshots();
+          logger.info({ taskId: data.taskId, sourceGroup }, 'Task paused via IPC');
         } else {
           logger.warn(
-            { taskId: data.taskId, sourceGroup },
+            { taskId: data.taskId, sourceGroup, taskGroup: task.group_folder },
             'Unauthorized task pause attempt',
           );
         }
@@ -290,15 +331,15 @@ export async function processTaskIpc(
     case 'resume_task':
       if (data.taskId) {
         const task = getTaskById(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (!task) {
+          logger.warn({ taskId: data.taskId, sourceGroup }, 'Task not found for resume');
+        } else if (isMain || task.group_folder === sourceGroup) {
           updateTask(data.taskId, { status: 'active' });
-          logger.info(
-            { taskId: data.taskId, sourceGroup },
-            'Task resumed via IPC',
-          );
+          refreshTaskSnapshots();
+          logger.info({ taskId: data.taskId, sourceGroup }, 'Task resumed via IPC');
         } else {
           logger.warn(
-            { taskId: data.taskId, sourceGroup },
+            { taskId: data.taskId, sourceGroup, taskGroup: task.group_folder },
             'Unauthorized task resume attempt',
           );
         }
@@ -308,15 +349,15 @@ export async function processTaskIpc(
     case 'cancel_task':
       if (data.taskId) {
         const task = getTaskById(data.taskId);
-        if (task && (isMain || task.group_folder === sourceGroup)) {
+        if (!task) {
+          logger.warn({ taskId: data.taskId, sourceGroup }, 'Task not found for cancel');
+        } else if (isMain || task.group_folder === sourceGroup) {
           deleteTask(data.taskId);
-          logger.info(
-            { taskId: data.taskId, sourceGroup },
-            'Task cancelled via IPC',
-          );
+          refreshTaskSnapshots();
+          logger.info({ taskId: data.taskId, sourceGroup }, 'Task cancelled via IPC');
         } else {
           logger.warn(
-            { taskId: data.taskId, sourceGroup },
+            { taskId: data.taskId, sourceGroup, taskGroup: task.group_folder },
             'Unauthorized task cancel attempt',
           );
         }
