@@ -163,6 +163,24 @@ UNITEOF
     systemctl enable nanoclaw >> "$LOG_FILE" 2>&1 || true
     systemctl start nanoclaw >> "$LOG_FILE" 2>&1 || true
 
+    # Install hourly health check cron job
+    HEALTH_SCRIPT="${PROJECT_PATH}/scripts/health-check.sh"
+    HEALTH_CRON="0 * * * * ${HEALTH_SCRIPT}"
+    HEALTH_INSTALLED="false"
+    if [ -f "$HEALTH_SCRIPT" ]; then
+      chmod +x "$HEALTH_SCRIPT"
+      # Add cron entry if not already present
+      if ! crontab -l 2>/dev/null | grep -qF "$HEALTH_SCRIPT"; then
+        (crontab -l 2>/dev/null; echo "$HEALTH_CRON") | crontab -
+        log "Health check cron job installed"
+      else
+        log "Health check cron job already installed"
+      fi
+      HEALTH_INSTALLED="true"
+    else
+      log "Health check script not found at $HEALTH_SCRIPT, skipping cron setup"
+    fi
+
     # Verify
     SERVICE_LOADED="false"
     if systemctl is-active nanoclaw >/dev/null 2>&1; then
@@ -179,6 +197,7 @@ NODE_PATH: $NODE_PATH
 PROJECT_PATH: $PROJECT_PATH
 UNIT_PATH: $UNIT_PATH
 SERVICE_LOADED: $SERVICE_LOADED
+HEALTH_CHECK: $HEALTH_INSTALLED
 STATUS: success
 LOG: logs/setup.log
 === END ===

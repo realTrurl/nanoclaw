@@ -83,6 +83,17 @@ if [ -f "$HOME/.config/nanoclaw/mount-allowlist.json" ]; then
 fi
 log "Mount allowlist: $MOUNT_ALLOWLIST"
 
+# 7. Check health check cron (Linux only)
+HEALTH_CHECK="not_applicable"
+if [ "$PLATFORM" = "linux" ]; then
+  if crontab -l 2>/dev/null | grep -qF "health-check.sh"; then
+    HEALTH_CHECK="installed"
+  else
+    HEALTH_CHECK="missing"
+  fi
+fi
+log "Health check cron: $HEALTH_CHECK"
+
 # Determine overall status
 STATUS="success"
 if [ "$SERVICE" != "running" ] || [ "$CREDENTIALS" = "missing" ] || [ "$WHATSAPP_AUTH" = "not_found" ] || [ "$REGISTERED_GROUPS" -eq 0 ] 2>/dev/null; then
@@ -99,6 +110,7 @@ CREDENTIALS: $CREDENTIALS
 WHATSAPP_AUTH: $WHATSAPP_AUTH
 REGISTERED_GROUPS: $REGISTERED_GROUPS
 MOUNT_ALLOWLIST: $MOUNT_ALLOWLIST
+HEALTH_CHECK: $HEALTH_CHECK
 STATUS: $STATUS
 LOG: logs/setup.log
 === END ===

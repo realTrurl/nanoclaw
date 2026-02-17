@@ -171,6 +171,17 @@ Run `./.claude/skills/setup/scripts/08b-setup-fail2ban.sh` and parse the status 
 
 **If FAIL2BAN_ACTIVE=false:** Read `logs/setup.log` for the error. Common fix: the package manager failed — try installing manually.
 
+## 10c. Health Check Cron (Linux only)
+
+The service setup script (step 10) automatically installs an hourly cron job that checks whether NanoClaw is alive: service active, node process running, and at least one container up. If any check fails, it restarts the service. Logs go to syslog (`journalctl -t nanoclaw-health`).
+
+The health check script lives at `scripts/health-check.sh`. If `HEALTH_CHECK=missing` in the verify output, re-run step 10 or manually install:
+
+```bash
+chmod +x scripts/health-check.sh
+(crontab -l 2>/dev/null; echo "0 * * * * $(pwd)/scripts/health-check.sh") | crontab -
+```
+
 ## 11. Verify
 
 Run `./.claude/skills/setup/scripts/09-verify.sh` and parse the status block.
