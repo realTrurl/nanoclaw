@@ -507,9 +507,11 @@ async function main(): Promise<void> {
     },
   });
   queue.setProcessMessagesFn(processGroupMessages);
-  recoverPendingMessages();
 
   // Start a persistent container for each registered group by injecting a boot message
+  // This also handles crash recovery: the boot message enqueues a message check,
+  // which calls processGroupMessages → getMessagesSince, picking up any unprocessed
+  // messages from before the crash alongside the boot message.
   for (const chatJid of Object.keys(registeredGroups)) {
     storeMessage({
       id: `boot-${Date.now()}`,
