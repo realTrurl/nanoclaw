@@ -154,7 +154,7 @@ Tell user how to grant a group access: add `containerConfig.additionalMounts` to
 
 ## 10. Start Service
 
-If the service is already running (check `launchctl list | grep nanoclaw` on macOS), unload it first: `launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist` — then proceed with a clean install.
+If the service is already running (check `launchctl list | grep nanoclaw` on macOS or `systemctl is-active nanoclaw` on Linux), stop it first — then proceed with a clean install.
 
 Run `./.claude/skills/setup/scripts/08-setup-service.sh` and parse the status block.
 
@@ -162,8 +162,14 @@ Run `./.claude/skills/setup/scripts/08-setup-service.sh` and parse the status bl
 - Read `logs/setup.log` for the error.
 - Common fix: plist already loaded with different path. Unload the old one first, then re-run.
 - On macOS: check `launchctl list | grep nanoclaw` to see if it's loaded with an error status. If the PID column is `-` and the status column is non-zero, the service is crashing. Read `logs/nanoclaw.error.log` for the crash reason and fix it (common: wrong Node path, missing .env, missing auth).
-- On Linux: check `systemctl --user status nanoclaw` for the error and fix accordingly.
+- On Linux: check `systemctl status nanoclaw` for the error and fix accordingly. The service is installed system-level (not user-level) so it survives SSH disconnects and reboots.
 - Re-run the setup-service script after fixing.
+
+## 10b. SSH Protection (Linux only)
+
+Run `./.claude/skills/setup/scripts/08b-setup-fail2ban.sh` and parse the status block. This installs fail2ban and configures it to ban IPs after 3 failed SSH attempts (1 hour ban). Skipped automatically on macOS.
+
+**If FAIL2BAN_ACTIVE=false:** Read `logs/setup.log` for the error. Common fix: the package manager failed — try installing manually.
 
 ## 11. Verify
 
@@ -185,7 +191,7 @@ Show the log tail command: `tail -f logs/nanoclaw.log`
 
 ## Troubleshooting
 
-**Service not starting:** Check `logs/nanoclaw.error.log`. Common causes: wrong Node path in plist (re-run step 10), missing `.env` (re-run step 4), missing WhatsApp auth (re-run step 5).
+**Service not starting:** Check `logs/nanoclaw.error.log`. Common causes: wrong Node path in plist (re-run step 10), missing `.env` (re-run step 4), missing WhatsApp auth (re-run step 5). On Linux, check with `systemctl status nanoclaw` and `journalctl -u nanoclaw`.
 
 **Container agent fails ("Claude Code process exited with code 1"):** Ensure the container runtime is running — start it: `container system start` (Apple Container) or `open -a Docker` (macOS Docker). Check container logs in `groups/main/logs/container-*.log`.
 
@@ -195,4 +201,4 @@ Show the log tail command: `tail -f logs/nanoclaw.log`
 
 **WhatsApp disconnected:** Run `npm run auth` to re-authenticate, then `npm run build && launchctl kickstart -k gui/$(id -u)/com.nanoclaw`.
 
-**Unload service:** `launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist`
+**Unload service:** `launchctl unload ~/Library/LaunchAgents/com.nanoclaw.plist` (macOS) or `systemctl stop nanoclaw && systemctl disable nanoclaw` (Linux)

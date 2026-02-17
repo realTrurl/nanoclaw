@@ -128,39 +128,44 @@ EOF
     ;;
 
   linux)
-    UNIT_DIR="$HOME_PATH/.config/systemd/user"
-    UNIT_PATH="$UNIT_DIR/nanoclaw.service"
-    mkdir -p "$UNIT_DIR"
-    log "Generating systemd unit at $UNIT_PATH"
+    UNIT_PATH="/etc/systemd/system/nanoclaw.service"
+    log "Generating system-level systemd unit at $UNIT_PATH"
 
     cat > "$UNIT_PATH" <<UNITEOF
 [Unit]
-Description=NanoClaw Personal Assistant
-After=network.target
+Description=NanoClaw - Personal Claude Assistant
+After=network.target docker.service
+Requires=docker.service
 
 [Service]
 Type=simple
-ExecStart=${NODE_PATH} ${PROJECT_PATH}/dist/index.js
 WorkingDirectory=${PROJECT_PATH}
+ExecStart=${NODE_PATH} ${PROJECT_PATH}/dist/index.js
 Restart=always
 RestartSec=5
-Environment=HOME=${HOME_PATH}
-Environment=PATH=/usr/local/bin:/usr/bin:/bin:${HOME_PATH}/.local/bin
-StandardOutput=append:${PROJECT_PATH}/logs/nanoclaw.log
-StandardError=append:${PROJECT_PATH}/logs/nanoclaw.error.log
+EnvironmentFile=${PROJECT_PATH}/.env
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 UNITEOF
 
-    log "Enabling and starting systemd service"
-    systemctl --user daemon-reload >> "$LOG_FILE" 2>&1 || true
-    systemctl --user enable nanoclaw >> "$LOG_FILE" 2>&1 || true
-    systemctl --user start nanoclaw >> "$LOG_FILE" 2>&1 || true
+    # Clean up old user-level service if it exists
+    if systemctl --user is-enabled nanoclaw >/dev/null 2>&1; then
+      log "Removing old user-level service"
+      systemctl --user stop nanoclaw >> "$LOG_FILE" 2>&1 || true
+      systemctl --user disable nanoclaw >> "$LOG_FILE" 2>&1 || true
+      rm -f "$HOME_PATH/.config/systemd/user/nanoclaw.service"
+      systemctl --user daemon-reload >> "$LOG_FILE" 2>&1 || true
+    fi
+
+    log "Enabling and starting systemd service (system-level)"
+    systemctl daemon-reload >> "$LOG_FILE" 2>&1 || true
+    systemctl enable nanoclaw >> "$LOG_FILE" 2>&1 || true
+    systemctl start nanoclaw >> "$LOG_FILE" 2>&1 || true
 
     # Verify
     SERVICE_LOADED="false"
-    if systemctl --user is-active nanoclaw >/dev/null 2>&1; then
+    if systemctl is-active nanoclaw >/dev/null 2>&1; then
       SERVICE_LOADED="true"
       log "Service verified as active"
     else

@@ -36,9 +36,9 @@ if [ "$PLATFORM" = "macos" ]; then
     fi
   fi
 elif [ "$PLATFORM" = "linux" ]; then
-  if systemctl --user is-active nanoclaw >/dev/null 2>&1; then
+  if systemctl is-active nanoclaw >/dev/null 2>&1; then
     SERVICE="running"
-  elif systemctl --user list-unit-files 2>/dev/null | grep -q "nanoclaw"; then
+  elif systemctl list-unit-files 2>/dev/null | grep -q "nanoclaw"; then
     SERVICE="stopped"
   fi
 fi
