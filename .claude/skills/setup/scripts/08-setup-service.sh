@@ -136,13 +136,15 @@ EOF
 Description=NanoClaw - Personal Claude Assistant
 After=network.target docker.service
 Requires=docker.service
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
 WorkingDirectory=${PROJECT_PATH}
 ExecStart=${NODE_PATH} ${PROJECT_PATH}/dist/index.js
 Restart=always
-RestartSec=5
+RestartSec=10
 EnvironmentFile=${PROJECT_PATH}/.env
 
 [Install]
