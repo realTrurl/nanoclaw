@@ -1,3 +1,4 @@
+import { execFile } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -214,6 +215,8 @@ export async function processTaskIpc(
     model?: string;
     // For restart_container
     reason?: string;
+    // For claude_cli
+    requestId?: string;
   },
   sourceGroup: string, // Verified identity from IPC directory
   isMain: boolean, // Verified from directory path
@@ -445,10 +448,54 @@ export async function processTaskIpc(
       }
       break;
 
-    case 'restart_container':
+    case 'restart_container': {
       logger.info({ sourceGroup, reason: data.reason || 'requested' }, 'Container restart requested via IPC');
+      // Always restart with opus 4.6
+      const sessDir = path.join(DATA_DIR, 'sessions', sourceGroup, '.claude');
+      const sPath = path.join(sessDir, 'settings.json');
+      try {
+        const s = fs.existsSync(sPath)
+          ? JSON.parse(fs.readFileSync(sPath, 'utf-8'))
+          : { env: {} };
+        s.env = s.env || {};
+        s.env.ANTHROPIC_MODEL = 'opus';
+        fs.writeFileSync(sPath, JSON.stringify(s, null, 2) + '\n');
+        logger.info({ sourceGroup }, 'Model reset to opus for restart');
+      } catch (err) {
+        logger.error({ err, sourceGroup }, 'Failed to reset model for restart');
+      }
       deps.restartContainer(sourceGroup);
       break;
+    }
+
+    case 'claude_cli': {
+      const requestId = data.requestId;
+      const prompt = data.prompt;
+      if (!requestId || !prompt) {
+        logger.warn({ sourceGroup }, 'claude_cli missing requestId or prompt');
+        break;
+      }
+      logger.info({ sourceGroup, requestId }, 'Claude CLI request via IPC');
+      const responsesDir = path.join(DATA_DIR, 'ipc', sourceGroup, 'responses');
+      fs.mkdirSync(responsesDir, { recursive: true });
+      const responsePath = path.join(responsesDir, `${requestId}.json`);
+      const CLI_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+      execFile(
+        'claude',
+        ['-p', prompt, '--output-format', 'text', '--model', 'opus'],
+        { timeout: CLI_TIMEOUT, maxBuffer: 10 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          const response = err
+            ? { requestId, ok: false, error: err.killed ? 'Timed out after 5 minutes' : (stderr || err.message) }
+            : { requestId, ok: true, result: stdout };
+          const tempPath = `${responsePath}.tmp`;
+          fs.writeFileSync(tempPath, JSON.stringify(response, null, 2));
+          fs.renameSync(tempPath, responsePath);
+          logger.info({ sourceGroup, requestId, ok: !err }, 'Claude CLI response written');
+        },
+      );
+      break;
+    }
 
     default:
       logger.warn({ type: data.type }, 'Unknown IPC task type');
