@@ -325,60 +325,6 @@ server.tool(
   },
 );
 
-const RESPONSES_DIR = path.join(IPC_DIR, 'responses');
-
-server.tool(
-  'claude_cli',
-  'Run a prompt on the host system\'s Claude CLI and get the result back. Useful for tasks that need host-level access (file system, network, installed tools). The host Claude runs with full permissions on the server.',
-  {
-    prompt: z.string().describe('The prompt to send to the host Claude CLI'),
-  },
-  async (args) => {
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const data = {
-      type: 'claude_cli',
-      requestId,
-      prompt: args.prompt,
-      groupFolder,
-      timestamp: new Date().toISOString(),
-    };
-
-    writeIpcFile(TASKS_DIR, data);
-
-    // Poll for response with timeout
-    const POLL_MS = 1000;
-    const TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-    const responsePath = path.join(RESPONSES_DIR, `${requestId}.json`);
-    const start = Date.now();
-
-    const result = await new Promise<string>((resolve) => {
-      const poll = () => {
-        if (Date.now() - start > TIMEOUT_MS) {
-          resolve('Error: Claude CLI request timed out after 5 minutes.');
-          return;
-        }
-        if (fs.existsSync(responsePath)) {
-          try {
-            const response = JSON.parse(fs.readFileSync(responsePath, 'utf-8'));
-            fs.unlinkSync(responsePath);
-            resolve(response.ok ? response.result : `Error: ${response.error}`);
-          } catch {
-            // File may be partially written, retry
-            setTimeout(poll, POLL_MS);
-          }
-          return;
-        }
-        setTimeout(poll, POLL_MS);
-      };
-      poll();
-    });
-
-    return {
-      content: [{ type: 'text' as const, text: result }],
-    };
-  },
-);
-
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);
