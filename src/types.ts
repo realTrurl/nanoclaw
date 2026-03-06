@@ -50,6 +50,7 @@ export interface NewMessage {
   timestamp: string;
   is_from_me?: boolean;
   is_bot_message?: boolean;
+  media_path?: string; // Container-relative path to downloaded media (e.g. /workspace/ipc/media/photo_123.jpg)
 }
 
 export interface ScheduledTask {

@@ -1,7 +1,11 @@
+import fs from 'fs';
+import path from 'path';
+
 import { Bot } from 'grammy';
 
 import {
   ASSISTANT_NAME,
+  DATA_DIR,
   TRIGGER_PATTERN,
 } from '../config.js';
 import { logger } from '../logger.js';
@@ -140,10 +144,85 @@ export class TelegramChannel implements Channel {
       });
     };
 
-    this.bot.on('message:photo', (ctx) => storeNonText(ctx, '[Photo]'));
+    // Download a Telegram file and save it to the group's IPC media directory.
+    // Returns the container-relative media path, or undefined on failure.
+    const downloadMedia = async (
+      chatJid: string,
+      groupFolder: string,
+      fileId: string,
+      prefix: string,
+      msgId: string,
+      defaultExt: string,
+    ): Promise<string | undefined> => {
+      try {
+        const file = await this.bot!.api.getFile(fileId);
+
+        const mediaDir = path.join(DATA_DIR, 'ipc', groupFolder, 'media');
+        fs.mkdirSync(mediaDir, { recursive: true });
+
+        const ext = path.extname(file.file_path || '') || defaultExt;
+        const filename = `${prefix}_${msgId}${ext}`;
+        const hostPath = path.join(mediaDir, filename);
+
+        const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${file.file_path}`;
+        const response = await fetch(downloadUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        fs.writeFileSync(hostPath, buffer);
+
+        logger.info({ chatJid, filename }, `Telegram ${prefix} downloaded`);
+        return `/workspace/ipc/media/${filename}`;
+      } catch (err) {
+        logger.error({ chatJid, err }, `Failed to download Telegram ${prefix}`);
+        return undefined;
+      }
+    };
+
+    // Store a media message: download the file, then deliver with media_path
+    const storeMedia = async (
+      ctx: any,
+      placeholder: string,
+      fileId: string,
+      prefix: string,
+      defaultExt: string,
+    ) => {
+      const chatJid = `tg:${ctx.chat.id}`;
+      const group = this.opts.registeredGroups()[chatJid];
+      if (!group) return;
+
+      const timestamp = new Date(ctx.message.date * 1000).toISOString();
+      const senderName =
+        ctx.from?.first_name || ctx.from?.username || ctx.from?.id?.toString() || 'Unknown';
+      const caption = ctx.message.caption ? ` ${ctx.message.caption}` : '';
+      const msgId = ctx.message.message_id.toString();
+
+      const mediaPath = await downloadMedia(chatJid, group.folder, fileId, prefix, msgId, defaultExt);
+
+      this.opts.onChatMetadata(chatJid, timestamp);
+      this.opts.onMessage(chatJid, {
+        id: msgId,
+        chat_jid: chatJid,
+        sender: ctx.from?.id?.toString() || '',
+        sender_name: senderName,
+        content: `${placeholder}${caption}`,
+        timestamp,
+        is_from_me: false,
+        media_path: mediaPath,
+      });
+    };
+
+    this.bot.on('message:photo', (ctx) => {
+      const photos = ctx.message.photo;
+      const largest = photos[photos.length - 1];
+      storeMedia(ctx, '[Photo]', largest.file_id, 'photo', '.jpg');
+    });
     this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
-    this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
-    this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
+    this.bot.on('message:voice', (ctx) =>
+      storeMedia(ctx, '[Voice message]', ctx.message.voice.file_id, 'voice', '.ogg'),
+    );
+    this.bot.on('message:audio', (ctx) =>
+      storeMedia(ctx, '[Audio]', ctx.message.audio.file_id, 'audio', '.mp3'),
+    );
     this.bot.on('message:document', (ctx) => {
       const name = ctx.message.document?.file_name || 'file';
       storeNonText(ctx, `[Document: ${name}]`);
