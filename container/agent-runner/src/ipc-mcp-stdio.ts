@@ -275,6 +275,18 @@ Use available_groups.json to find the JID for a group. The folder name should be
 );
 
 server.tool(
+  'get_model',
+  'Check which Claude model this container is currently running on.',
+  {},
+  async () => {
+    const model = process.env.ANTHROPIC_MODEL || 'unknown';
+    return {
+      content: [{ type: 'text' as const, text: `Current model: ${model}` }],
+    };
+  },
+);
+
+server.tool(
   'set_model',
   `Switch the Claude model for this group. Takes effect after an automatic container restart.
 
