@@ -119,9 +119,20 @@ function buildVolumeMounts(
         // Enable Claude's memory feature (persists user preferences between sessions)
         // https://code.claude.com/docs/en/memory#manage-auto-memory
         CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0',
+        ANTHROPIC_MODEL: 'claude-opus-4-6',
       },
     }, null, 2) + '\n');
   }
+
+  // Always ensure model is set to Opus on every container spawn.
+  // The agent can switch models at runtime via set_model, but every fresh
+  // container start (including systemctl restarts) must default to Opus.
+  try {
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    settings.env = settings.env || {};
+    settings.env.ANTHROPIC_MODEL = 'claude-opus-4-6';
+    fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
+  } catch { /* best effort */ }
 
   // Sync skills from container/skills/ into each group's .claude/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');

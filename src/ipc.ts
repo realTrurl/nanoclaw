@@ -426,6 +426,13 @@ export async function processTaskIpc(
           logger.warn({ model: data.model, sourceGroup }, 'Invalid model requested');
           break;
         }
+        // Expand shorthands to full model IDs
+        const MODEL_SHORTHANDS: Record<string, string> = {
+          opus: 'claude-opus-4-6',
+          sonnet: 'claude-sonnet-4-6',
+          haiku: 'claude-haiku-4-5-20251001',
+        };
+        const fullModelId = MODEL_SHORTHANDS[data.model] || data.model;
         // Update the group's settings.json
         const sessionsDir = path.join(DATA_DIR, 'sessions', sourceGroup, '.claude');
         const settingsPath = path.join(sessionsDir, 'settings.json');
@@ -434,9 +441,9 @@ export async function processTaskIpc(
             ? JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))
             : { env: {} };
           settings.env = settings.env || {};
-          settings.env.ANTHROPIC_MODEL = data.model;
+          settings.env.ANTHROPIC_MODEL = fullModelId;
           fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-          logger.info({ model: data.model, sourceGroup }, 'Model updated via IPC');
+          logger.info({ model: fullModelId, sourceGroup }, 'Model updated via IPC');
           // Auto-restart the container so the new model takes effect
           deps.restartContainer(sourceGroup);
         } catch (err) {
@@ -455,7 +462,7 @@ export async function processTaskIpc(
           ? JSON.parse(fs.readFileSync(sPath, 'utf-8'))
           : { env: {} };
         s.env = s.env || {};
-        s.env.ANTHROPIC_MODEL = 'opus';
+        s.env.ANTHROPIC_MODEL = 'claude-opus-4-6';
         fs.writeFileSync(sPath, JSON.stringify(s, null, 2) + '\n');
         logger.info({ sourceGroup }, 'Model reset to opus for restart');
       } catch (err) {
