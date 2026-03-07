@@ -5,9 +5,6 @@ import { Bot } from 'grammy';
 
 import {
   ASSISTANT_NAME,
-  CLOUDFLARE_ACCOUNT_ID,
-  CLOUDFLARE_EMAIL,
-  CLOUDFLARE_GLOBAL_API_KEY,
   DATA_DIR,
   TRIGGER_PATTERN,
 } from '../config.js';
@@ -181,33 +178,6 @@ export class TelegramChannel implements Channel {
       }
     };
 
-    // Transcribe an audio file using Cloudflare Workers AI Whisper.
-    // Returns the transcript text, or undefined on failure.
-    const transcribeAudio = async (hostPath: string, chatJid: string): Promise<string | undefined> => {
-      if (!CLOUDFLARE_ACCOUNT_ID || !CLOUDFLARE_EMAIL || !CLOUDFLARE_GLOBAL_API_KEY) return undefined;
-      try {
-        const audioBuffer = fs.readFileSync(hostPath);
-        const response = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/ai/run/@cf/openai/whisper`,
-          {
-            method: 'POST',
-            headers: { 'X-Auth-Email': CLOUDFLARE_EMAIL, 'X-Auth-Key': CLOUDFLARE_GLOBAL_API_KEY },
-            body: audioBuffer,
-          },
-        );
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json() as { result?: { text?: string } };
-        const text = data.result?.text?.trim();
-        if (text) {
-          logger.info({ chatJid, length: text.length }, 'Audio transcribed');
-          return text;
-        }
-      } catch (err) {
-        logger.error({ chatJid, err }, 'Failed to transcribe audio');
-      }
-      return undefined;
-    };
-
     // Store a media message: download the file, then deliver with media_path
     const storeMedia = async (
       ctx: any,
@@ -228,23 +198,13 @@ export class TelegramChannel implements Channel {
 
       const mediaPath = await downloadMedia(chatJid, group.folder, fileId, prefix, msgId, defaultExt);
 
-      // Transcribe voice/audio messages
-      let content = `${placeholder}${caption}`;
-      if (mediaPath && (prefix === 'voice' || prefix === 'audio')) {
-        const hostPath = path.join(DATA_DIR, 'ipc', group.folder, 'media', path.basename(mediaPath));
-        const transcript = await transcribeAudio(hostPath, chatJid);
-        if (transcript) {
-          content = `${placeholder} Transcript: "${transcript}"${caption}`;
-        }
-      }
-
       this.opts.onChatMetadata(chatJid, timestamp);
       this.opts.onMessage(chatJid, {
         id: msgId,
         chat_jid: chatJid,
         sender: ctx.from?.id?.toString() || '',
         sender_name: senderName,
-        content,
+        content: `${placeholder}${caption}`,
         timestamp,
         is_from_me: false,
         media_path: mediaPath,
